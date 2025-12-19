@@ -36,10 +36,13 @@ export class ScoreRenderer {
       abcjs.renderAbc(div, abcNotation, {
         responsive: 'resize',
         add_classes: true,
-        staffwidth: 800,
+        staffwidth: 850,
+        scale: 1.0,
+        paddingtop: 10,
+        paddingbottom: 10,
         wrap: {
-          minSpacing: 1.5,
-          maxSpacing: 2.5,
+          minSpacing: 1.8,
+          maxSpacing: 2.8,
           preferredMeasuresPerLine: 4
         }
       });

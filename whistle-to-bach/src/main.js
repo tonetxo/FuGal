@@ -7,13 +7,15 @@ tf.env().set('DEBUG', false);
 import { AudioRecorder } from './recorder.js';
 import { AudioTranscriber } from './transcriber.js';
 import { BachComposer } from './composer.js';
+import { FugueGenerator } from './fugue-generator.js';
 import { AudioPlayer } from './player.js';
 import { ScoreRenderer } from './renderer.js';
 
 // Instancias
 const recorder = new AudioRecorder();
 const transcriber = new AudioTranscriber();
-const composer = new BachComposer();
+const composer = new BachComposer();  // Coconet para modo Coral
+const fugueGen = new FugueGenerator(); // Algorítmico para modo Fuga
 const player = new AudioPlayer();
 const renderer = new ScoreRenderer('score-container');
 
@@ -152,7 +154,7 @@ if (btnRetranscribe) {
   });
 }
 
-// 3. Proceso Bachify (solo armonización)
+// 3. Proceso Bachify (Fuga o Coral según selector)
 btnProcess.addEventListener('click', async () => {
   if (!transcribedSequence) {
     setStatus("Primero debes grabar o cargar un archivo de audio.");
@@ -163,10 +165,19 @@ btnProcess.addEventListener('click', async () => {
     btnProcess.disabled = true;
     btnPlay.disabled = true;
 
-    // Componer (Inpainting con Coconet)
-    setStatus("Componiendo fuga a 4 voces (Coconet)... Esto puede tardar.");
+    // Obtener modo de composición
+    const modeSelector = document.getElementById('composition-mode');
+    const mode = modeSelector ? modeSelector.value : 'fugue';
 
-    currentSequence = await composer.harmonize(transcribedSequence);
+    if (mode === 'fugue') {
+      // Modo Fuga: Usar FugueGenerator algorítmico
+      setStatus("Generando fuga a 4 voces (algorítmico)...");
+      currentSequence = fugueGen.generate(transcribedSequence);
+    } else {
+      // Modo Coral: Usar Coconet para armonización
+      setStatus("Componiendo coral a 4 voces (Coconet)... Esto puede tardar.");
+      currentSequence = await composer.harmonize(transcribedSequence);
+    }
 
     if (!currentSequence) {
       setStatus("Error al generar la composición musical.");
@@ -174,7 +185,8 @@ btnProcess.addEventListener('click', async () => {
       return;
     }
 
-    setStatus(`¡Composición terminada! ${currentSequence.notes.length} notas en 4 voces.`);
+    const modeLabel = mode === 'fugue' ? 'Fuga' : 'Coral';
+    setStatus(`¡${modeLabel} terminada! ${currentSequence.notes.length} notas en 4 voces.`);
 
     // Cargar en el player y Renderizar
     await player.loadSequence(currentSequence);

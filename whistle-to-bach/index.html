@@ -271,6 +271,45 @@
       background: #666;
       cursor: not-allowed;
     }
+
+    /* Selector de Modo */
+    .mode-selector {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      justify-content: center;
+      background: var(--bg-secondary);
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 5px var(--shadow);
+    }
+
+    .mode-selector label {
+      font-weight: bold;
+      color: var(--text-primary);
+    }
+
+    .mode-selector select {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: 2px solid #B8860B;
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-selector select:hover {
+      border-color: #DAA520;
+    }
+
+    .mode-selector select:focus {
+      outline: none;
+      border-color: #CD853F;
+      box-shadow: 0 0 0 3px rgba(184, 134, 11, 0.3);
+    }
   </style>
 </head>
 
@@ -291,6 +330,15 @@
 
     <button id="btn-process" class="btn-process" disabled>✨ Bachify!</button>
     <button id="btn-play" class="btn-play" disabled>▶️ Reproducir</button>
+  </div>
+
+  <!-- Selector de Modo de Composición -->
+  <div class="mode-selector">
+    <label>🎼 Modo de Composición:</label>
+    <select id="composition-mode">
+      <option value="fugue">🎵 Fuga (4 voces contrapuntísticas)</option>
+      <option value="coral">🎹 Coral Bach (armonización Coconet)</option>
+    </select>
   </div>
 
   <!-- Panel de Ajustes Colapsable -->
