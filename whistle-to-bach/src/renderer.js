@@ -72,6 +72,23 @@ export class ScoreRenderer {
       notes.sort((a, b) => a.startTime - b.startTime);
     });
 
+    // Calcular tiempo total máximo (para sincronizar todas las voces)
+    // Usar el endTime real de las notas, no totalTime que puede ser incorrecto
+    let maxEndTime = 0;
+    noteSequence.notes.forEach(note => {
+      if (note.endTime > maxEndTime) maxEndTime = note.endTime;
+    });
+    // Fallback a totalTime si no hay notas
+    if (maxEndTime === 0) maxEndTime = noteSequence.totalTime || 0;
+
+    // Redondear al siguiente compás completo (8 beats = 4 segundos a 120 BPM)
+    const beatDuration = 0.5;
+    const beatsPerMeasure = 8;
+    const totalBeats = Math.ceil(maxEndTime / beatDuration);
+    const totalMeasures = Math.ceil(totalBeats / beatsPerMeasure);
+    const syncedTotalTime = totalMeasures * beatsPerMeasure * beatDuration;
+
+
     // Generar header ABC
     let abc = `X:1
 T:Whistle to Bach
@@ -84,13 +101,35 @@ K:C
     // Generar notas para cada voz
     const voiceKeys = Object.keys(voices).sort((a, b) => a - b);
 
+    // Primera pasada: generar todas las voces y contar barras
+    const voiceABCs = [];
+    let maxBars = 0;
+
     voiceKeys.forEach((voiceKey, idx) => {
       const voiceNotes = voices[voiceKey];
       const clef = idx < 2 ? 'treble' : 'bass';
       const voiceName = ['Soprano', 'Alto', 'Tenor', 'Bass'][idx] || `V${idx}`;
+      const header = `V:${idx + 1} clef=${clef} name="${voiceName}"`;
 
-      abc += `V:${idx + 1} clef=${clef} name="${voiceName}"\n`;
-      abc += this.notesToABCLine(voiceNotes, noteSequence.totalTime);
+      // Generar sin límite de compases
+      const abcLine = this.notesToABCLine(voiceNotes, syncedTotalTime, 0);
+      const bars = (abcLine.match(/\|/g) || []).length;
+
+      if (bars > maxBars) maxBars = bars;
+
+      voiceABCs.push({ header, abcLine, bars, voiceNotes });
+    });
+
+
+    // Segunda pasada: regenerar voces con menos compases para igualar
+    voiceABCs.forEach((voice, idx) => {
+      abc += voice.header + '\n';
+      if (voice.bars < maxBars) {
+        // Regenerar con el número correcto de compases
+        abc += this.notesToABCLine(voice.voiceNotes, syncedTotalTime, maxBars);
+      } else {
+        abc += voice.abcLine;
+      }
       abc += '\n';
     });
 
@@ -99,24 +138,34 @@ K:C
 
   /**
    * Convierte un array de notas a una línea ABC
-   * Cuenta beats correctamente para generar barras de compás en 4/4
+   * @param {Array} notes - Array de notas
+   * @param {number} totalTime - Tiempo total sincronizado
+   * @param {number} totalMeasures - Número total de compases requeridos
    */
-  notesToABCLine(notes, totalTime) {
-    if (!notes || notes.length === 0) return 'z8 |\n';
+  notesToABCLine(notes, totalTime, totalMeasures = 0) {
+    const beatsPerMeasure = 8;
+    const beatDuration = 0.5;
+
+    if (!notes || notes.length === 0) {
+      const measures = totalMeasures > 0 ? totalMeasures : 1;
+      let abcLine = '';
+      for (let i = 0; i < measures - 1; i++) {
+        abcLine += 'z8 | ';
+      }
+      abcLine += 'z8 |]';
+      return abcLine;
+    }
 
     let abcLine = '';
     let currentTime = 0;
-    let beatsInMeasure = 0;        // Beats acumulados en el compás actual
-    const beatsPerMeasure = 8;     // 4/4 con L:1/8 = 8 corcheas por compás
-    const beatDuration = 0.5;      // Duración de 1/8 en segundos (a 120 BPM)
+    let beatsInMeasure = 0;
+    let measuresWritten = 0;
 
     notes.forEach((note) => {
-      // Añadir silencios si hay gaps
       const gap = note.startTime - currentTime;
       if (gap > beatDuration / 2) {
         let restBeats = Math.round(gap / beatDuration);
 
-        // Insertar silencios respetando las barras de compás
         while (restBeats > 0) {
           const beatsUntilBar = beatsPerMeasure - beatsInMeasure;
           const restsToAdd = Math.min(restBeats, beatsUntilBar);
@@ -127,52 +176,65 @@ K:C
             restBeats -= restsToAdd;
           }
 
-          // Añadir barra si el compás está completo
           if (beatsInMeasure >= beatsPerMeasure) {
             abcLine += '| ';
             beatsInMeasure = 0;
+            measuresWritten++;
           }
         }
       }
 
-      // Convertir pitch MIDI a ABC
       const abcNote = this.midiToABC(note.pitch);
-
-      // Calcular duración en beats
       const duration = note.endTime - note.startTime;
       let noteBeats = Math.max(1, Math.round(duration / beatDuration));
 
-      // Insertar la nota, dividiendo si cruza la barra de compás
       while (noteBeats > 0) {
         const beatsUntilBar = beatsPerMeasure - beatsInMeasure;
         const beatsToWrite = Math.min(noteBeats, beatsUntilBar);
 
-        if (beatsToWrite > 1) {
-          abcLine += `${abcNote}${beatsToWrite} `;
-        } else {
-          abcLine += `${abcNote} `;
-        }
-
+        abcLine += beatsToWrite > 1 ? `${abcNote}${beatsToWrite} ` : `${abcNote} `;
         beatsInMeasure += beatsToWrite;
         noteBeats -= beatsToWrite;
 
-        // Añadir barra si el compás está completo
         if (beatsInMeasure >= beatsPerMeasure) {
           abcLine += '| ';
           beatsInMeasure = 0;
+          measuresWritten++;
         }
       }
 
       currentTime = note.endTime;
     });
 
-    // Completar el último compás con silencios si es necesario
+    // Contar cuántos compases se han escrito realmente (contando barras |)
+    const barsWritten = (abcLine.match(/\|/g) || []).length;
+
+    // Completar el compás actual si está incompleto
     if (beatsInMeasure > 0 && beatsInMeasure < beatsPerMeasure) {
       const remainingBeats = beatsPerMeasure - beatsInMeasure;
       abcLine += remainingBeats > 1 ? `z${remainingBeats} ` : 'z ';
+      abcLine += '| ';
     }
 
-    abcLine += '|]';
+    // Contar barras después de completar
+    let currentBars = (abcLine.match(/\|/g) || []).length;
+
+    // Añadir compases completos de silencio hasta alcanzar totalMeasures
+    const targetMeasures = totalMeasures > 0 ? totalMeasures : currentBars;
+
+    while (currentBars < targetMeasures) {
+      abcLine += 'z8 | ';
+      currentBars++;
+    }
+
+    // Barra de cierre final - reemplazar la última | por |]
+    abcLine = abcLine.trimEnd();
+    if (abcLine.endsWith('|')) {
+      abcLine = abcLine.slice(0, -1) + '|]';
+    } else {
+      abcLine += ' |]';
+    }
+
     return abcLine;
   }
 

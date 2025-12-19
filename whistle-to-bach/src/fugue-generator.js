@@ -126,14 +126,14 @@ export class FugueGenerator {
     }
 
     /**
-     * Construye la exposición con 4 entradas escalonadas
+     * Construye la exposición con 4 entradas escalonadas (solapadas parcialmente)
      */
     buildExposition(subject, answer, countersubject) {
         const notes = [];
         const subjectDuration = this.getSequenceDuration(subject);
 
-        // Asegurar que la duración del sujeto es múltiplo de un compás (8 beats)
-        const measureAlignedDuration = Math.ceil(subjectDuration / this.beatsPerMeasure) * this.beatsPerMeasure;
+        // Entrada cada 50-75% del sujeto para mejor solapamiento
+        const entrySpacing = Math.max(4, Math.ceil(subjectDuration * 0.6));
 
         // Transponer a tesituras apropiadas
         const sopranoSubject = this.transposeToRange(subject, this.voiceRanges.soprano);
@@ -143,82 +143,124 @@ export class FugueGenerator {
         const sopranoCS = this.transposeToRange(countersubject, this.voiceRanges.soprano);
         const altoCS = this.transposeToRange(countersubject, this.voiceRanges.alto);
         const tenorCS = this.transposeToRange(countersubject, this.voiceRanges.tenor);
+        const bassCS = this.transposeToRange(countersubject, this.voiceRanges.bass);
 
-        // === ENTRADA 1: Soprano (sujeto) - Compás 1 ===
+        // === ENTRADA 1: Soprano (sujeto) ===
         const entry1Beat = 0;
         sopranoSubject.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry1Beat,
-                endBeat: n.endBeat + entry1Beat,
-                voice: 0
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry1Beat, endBeat: n.endBeat + entry1Beat, voice: 0 });
         });
 
-        // === ENTRADA 2: Alto (respuesta) - Compás 2 ===
-        const entry2Beat = measureAlignedDuration;
+        // === ENTRADA 2: Alto (respuesta) - entra durante el sujeto ===
+        const entry2Beat = entrySpacing;
         altoAnswer.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry2Beat,
-                endBeat: n.endBeat + entry2Beat,
-                voice: 1
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry2Beat, endBeat: n.endBeat + entry2Beat, voice: 1 });
         });
         // Soprano continúa con contrasujeto
         sopranoCS.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry2Beat,
-                endBeat: n.endBeat + entry2Beat,
-                voice: 0
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry2Beat, endBeat: n.endBeat + entry2Beat, voice: 0 });
         });
 
-        // === ENTRADA 3: Tenor (sujeto) - Compás 3 ===
-        const entry3Beat = measureAlignedDuration * 2;
+        // === ENTRADA 3: Tenor (sujeto) ===
+        const entry3Beat = entrySpacing * 2;
         tenorSubject.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry3Beat,
-                endBeat: n.endBeat + entry3Beat,
-                voice: 2
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry3Beat, endBeat: n.endBeat + entry3Beat, voice: 2 });
         });
         // Alto con contrasujeto
         altoCS.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry3Beat,
-                endBeat: n.endBeat + entry3Beat,
-                voice: 1
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry3Beat, endBeat: n.endBeat + entry3Beat, voice: 1 });
+        });
+        // Soprano continúa con variación del sujeto (material libre)
+        this.generateFreeCounterpoint(sopranoSubject, entry3Beat).forEach(n => {
+            notes.push({ ...n, voice: 0 });
         });
 
-        // === ENTRADA 4: Bajo (respuesta) - Compás 4 ===
-        const entry4Beat = measureAlignedDuration * 3;
+        // === ENTRADA 4: Bajo (respuesta) ===
+        const entry4Beat = entrySpacing * 3;
         bassAnswer.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry4Beat,
-                endBeat: n.endBeat + entry4Beat,
-                voice: 3
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry4Beat, endBeat: n.endBeat + entry4Beat, voice: 3 });
         });
         // Tenor con contrasujeto
         tenorCS.forEach(n => {
-            notes.push({
-                ...n,
-                startBeat: n.startBeat + entry4Beat,
-                endBeat: n.endBeat + entry4Beat,
-                voice: 2
-            });
+            notes.push({ ...n, startBeat: n.startBeat + entry4Beat, endBeat: n.endBeat + entry4Beat, voice: 2 });
         });
+        // Alto y Soprano continúan
+        this.generateFreeCounterpoint(altoAnswer, entry4Beat).forEach(n => {
+            notes.push({ ...n, voice: 1 });
+        });
+        this.generateFreeCounterpoint(sopranoSubject, entry4Beat).forEach(n => {
+            notes.push({ ...n, voice: 0 });
+        });
+
+        // Extensión después de la exposición para dar más desarrollo
+        const postExpoStart = entry4Beat + subjectDuration;
+        const episode = this.generateEpisode(subject, postExpoStart);
+        notes.push(...episode.notes);
 
         return {
             notes,
-            endBeat: entry4Beat + measureAlignedDuration
+            endBeat: episode.endBeat
         };
+    }
+
+    /**
+     * Genera contrapunto libre basado en un tema (variación rítmica/melódica)
+     */
+    generateFreeCounterpoint(theme, offsetBeat) {
+        if (theme.length === 0) return [];
+
+        // Generar una variación: invertir direcciones y ajustar ritmo
+        const result = [];
+        const avgPitch = theme.reduce((sum, n) => sum + n.pitch, 0) / theme.length;
+
+        theme.forEach((n, i) => {
+            if (i % 2 === 0) { // Usar la mitad de las notas
+                const interval = n.pitch - avgPitch;
+                result.push({
+                    pitch: Math.round(avgPitch - interval * 0.5), // Inversión parcial
+                    startBeat: n.startBeat + offsetBeat,
+                    endBeat: n.endBeat + offsetBeat,
+                    velocity: 65
+                });
+            }
+        });
+
+        return result;
+    }
+
+    /**
+     * Genera un episodio (desarrollo) con secuencias basadas en el sujeto
+     */
+    generateEpisode(subject, startBeat) {
+        const notes = [];
+        const motif = subject.slice(0, Math.min(4, subject.length)); // Motivo corto
+
+        // Secuencia descendente por grados
+        const transpositions = [0, -2, -4, -2]; // Patrón de transposición
+
+        transpositions.forEach((trans, i) => {
+            const beatOffset = startBeat + (i * 4); // Cada 4 beats
+            const voice = i % 4; // Rotar entre voces
+            const range = [this.voiceRanges.soprano, this.voiceRanges.alto,
+            this.voiceRanges.tenor, this.voiceRanges.bass][voice];
+
+            const transposed = this.transposeToRange(
+                motif.map(n => ({ ...n, pitch: n.pitch + trans })),
+                range
+            );
+
+            transposed.forEach(n => {
+                notes.push({
+                    ...n,
+                    startBeat: n.startBeat + beatOffset,
+                    endBeat: n.endBeat + beatOffset,
+                    voice: voice
+                });
+            });
+        });
+
+        const endBeat = startBeat + 16; // 2 compases de episodio
+        return { notes, endBeat };
     }
 
     /**
@@ -260,16 +302,31 @@ export class FugueGenerator {
         const cadenceBeat = Math.ceil(maxEndBeat / this.beatsPerMeasure) * this.beatsPerMeasure;
         const cadenceDuration = 4; // Blanca
 
-        // Acorde final en todas las voces
+        // Acorde final en todas las voces (respetando tesituras)
         const tonicPitch = subject[0]?.pitch || 60;
-        [
-            { pitch: tonicPitch + 24, voice: 0 },  // Soprano: tónica alta
-            { pitch: tonicPitch + 16, voice: 1 },  // Alto: 3ª mayor
-            { pitch: tonicPitch + 7, voice: 2 },   // Tenor: 5ª
-            { pitch: tonicPitch, voice: 3 }        // Bajo: tónica
-        ].forEach(chord => {
+        const tonicClass = tonicPitch % 12; // Clase de pitch (0-11)
+
+        // Calcular pitches del acorde en las tesituras correctas
+        const finalChord = [
+            { targetPitch: tonicClass, range: this.voiceRanges.soprano, voice: 0 },  // Tónica
+            { targetPitch: (tonicClass + 4) % 12, range: this.voiceRanges.alto, voice: 1 },  // 3ª mayor
+            { targetPitch: (tonicClass + 7) % 12, range: this.voiceRanges.tenor, voice: 2 },  // 5ª
+            { targetPitch: tonicClass, range: this.voiceRanges.bass, voice: 3 }   // Tónica (bajo)
+        ];
+
+        finalChord.forEach(chord => {
+            // Encontrar el pitch dentro del rango de la voz
+            let pitch = chord.range.min + chord.targetPitch;
+            while (pitch < chord.range.min) pitch += 12;
+            while (pitch > chord.range.max) pitch -= 12;
+            // Asegurar que está en el centro del rango
+            const center = (chord.range.min + chord.range.max) / 2;
+            while (pitch < center - 6 && pitch + 12 <= chord.range.max) pitch += 12;
+            while (pitch > center + 6 && pitch - 12 >= chord.range.min) pitch -= 12;
+
+
             notes.push({
-                pitch: this.clampPitch(chord.pitch, 36, 84),
+                pitch: pitch,
                 startBeat: cadenceBeat,
                 endBeat: cadenceBeat + cadenceDuration,
                 velocity: 90,
