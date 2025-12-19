@@ -30,7 +30,12 @@ export class FugueGenerator {
             throw new Error("No hay notas válidas para generar la fuga.");
         }
 
-        console.log("Generando fuga algorítmica...");
+        // Obtener el BPM de la secuencia de entrada para mantener la consistencia rítmica
+        const qpm = inputSequence.tempos?.[0]?.qpm || 120;
+        // 1 beat = 1/8 note (corchea). Si qpm es negra, qpm*2 son corcheas por min.
+        this.beatDuration = 60 / (qpm * 2);
+
+        console.log(`Generando fuga algorítmica a ${qpm} BPM (corchea = ${this.beatDuration}s)...`);
 
         // 1. Extraer y CUANTIZAR el sujeto
         const subject = this.extractAndQuantizeSubject(inputSequence.notes);
@@ -69,7 +74,7 @@ export class FugueGenerator {
         return {
             notes: allNotes,
             totalTime: totalTime,
-            tempos: [{ time: 0, qpm: 120 }],
+            tempos: [{ time: 0, qpm: qpm }],
             timeSignatures: [{ time: 0, numerator: 4, denominator: 4 }]
         };
     }
@@ -132,8 +137,9 @@ export class FugueGenerator {
         const notes = [];
         const subjectDuration = this.getSequenceDuration(subject);
 
-        // Entrada cada 50-75% del sujeto para mejor solapamiento
-        const entrySpacing = Math.max(4, Math.ceil(subjectDuration * 0.6));
+        // Entrada cada sujeto completo o medio (mínimo 1 compás = 8 corcheas)
+        // Redondeamos a múltiplos de 4 beats para mejor alineación musical
+        let entrySpacing = Math.max(8, Math.ceil(subjectDuration / 4) * 4);
 
         // Transponer a tesituras apropiadas
         const sopranoSubject = this.transposeToRange(subject, this.voiceRanges.soprano);

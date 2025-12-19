@@ -72,29 +72,27 @@ export class ScoreRenderer {
       notes.sort((a, b) => a.startTime - b.startTime);
     });
 
-    // Calcular tiempo total máximo (para sincronizar todas las voces)
-    // Usar el endTime real de las notas, no totalTime que puede ser incorrecto
+    // Calcular tiempo total máximo
     let maxEndTime = 0;
     noteSequence.notes.forEach(note => {
       if (note.endTime > maxEndTime) maxEndTime = note.endTime;
     });
-    // Fallback a totalTime si no hay notas
     if (maxEndTime === 0) maxEndTime = noteSequence.totalTime || 0;
 
-    // Redondear al siguiente compás completo (8 beats = 4 segundos a 120 BPM)
-    const beatDuration = 0.5;
+    // Obtener BPM real de la secuencia
+    const qpm = Math.round(noteSequence.tempos?.[0]?.qpm || 120);
+    const beatDuration = 60 / (qpm * 2); // 1/8 note duration
     const beatsPerMeasure = 8;
     const totalBeats = Math.ceil(maxEndTime / beatDuration);
     const totalMeasures = Math.ceil(totalBeats / beatsPerMeasure);
     const syncedTotalTime = totalMeasures * beatsPerMeasure * beatDuration;
-
 
     // Generar header ABC
     let abc = `X:1
 T:Whistle to Bach
 M:4/4
 L:1/8
-Q:1/4=120
+Q:1/4=${qpm}
 K:C
 `;
 
@@ -112,7 +110,7 @@ K:C
       const header = `V:${idx + 1} clef=${clef} name="${voiceName}"`;
 
       // Generar sin límite de compases
-      const abcLine = this.notesToABCLine(voiceNotes, syncedTotalTime, 0);
+      const abcLine = this.notesToABCLine(voiceNotes, beatDuration, syncedTotalTime, 0);
       const bars = (abcLine.match(/\|/g) || []).length;
 
       if (bars > maxBars) maxBars = bars;
@@ -126,7 +124,7 @@ K:C
       abc += voice.header + '\n';
       if (voice.bars < maxBars) {
         // Regenerar con el número correcto de compases
-        abc += this.notesToABCLine(voice.voiceNotes, syncedTotalTime, maxBars);
+        abc += this.notesToABCLine(voice.voiceNotes, beatDuration, syncedTotalTime, maxBars);
       } else {
         abc += voice.abcLine;
       }
@@ -139,12 +137,12 @@ K:C
   /**
    * Convierte un array de notas a una línea ABC
    * @param {Array} notes - Array de notas
+   * @param {number} beatDuration - Duración de una corchea en segundos
    * @param {number} totalTime - Tiempo total sincronizado
    * @param {number} totalMeasures - Número total de compases requeridos
    */
-  notesToABCLine(notes, totalTime, totalMeasures = 0) {
+  notesToABCLine(notes, beatDuration, totalTime, totalMeasures = 0) {
     const beatsPerMeasure = 8;
-    const beatDuration = 0.5;
 
     if (!notes || notes.length === 0) {
       const measures = totalMeasures > 0 ? totalMeasures : 1;

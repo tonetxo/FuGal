@@ -8,30 +8,43 @@ export class AudioPlayer {
     this.sequence = null;
     this.parts = [];
 
-    // Inicializar Tone.js en estado suspendido para evitar mensajes de consola
-    // La inicialización real se hará en respuesta a la interacción del usuario
+    // Inicializar Tone.js en estado suspendido
     this.isInitialized = false;
   }
 
   async initialize() {
     if (!this.isInitialized) {
       // Crear 4 sintetizadores, uno por voz (Soprano, Alto, Tenor, Bajo)
-      // Usaremos un sonido tipo Órgano/Clave
       const synthOptions = {
         oscillator: { type: "triangle" },
         envelope: {
-          attack: 0.05,
+          attack: 0.03,
           decay: 0.1,
-          sustain: 0.3,
-          release: 1
+          sustain: 0.4,
+          release: 0.8
+        }
+      };
+
+      const bassSynthOptions = {
+        oscillator: { type: "sawtooth" },
+        envelope: {
+          attack: 0.02,
+          decay: 0.1,
+          sustain: 0.5,
+          release: 0.8
         }
       };
 
       for (let i = 0; i < 4; i++) {
-        // Panear las voces ligeramente para dar espacio estéreo
-        const pan = new Tone.Panner((i - 1.5) * 0.5).toDestination();
-        const synth = new Tone.PolySynth(Tone.Synth, synthOptions).connect(pan);
-        synth.volume.value = -8; // Bajar volumen para evitar saturación al sumar 4 voces
+        const pan = new Tone.Panner((i - 1.5) * 0.4).toDestination();
+        const options = i === 3 ? bassSynthOptions : synthOptions;
+        const synth = new Tone.PolySynth(Tone.Synth, {
+          maxPolyphony: 8,
+          ...options
+        }).connect(pan);
+
+        // Volumen más audible
+        synth.volume.value = i === 3 ? -4 : -8;
         this.synths.push(synth);
       }
 
@@ -41,7 +54,6 @@ export class AudioPlayer {
 
   async startTone() {
     if (Tone.context.state !== 'running') {
-      // Esto debería suceder después de la interacción del usuario
       await Tone.start();
       console.log("Audio Context Ready");
     }
@@ -57,31 +69,31 @@ export class AudioPlayer {
       return;
     }
 
-    // Asegurar que los sintes estén inicializados
     await this.initialize();
-
     this.stop();
     this.sequence = noteSequence;
 
-    // Tone.Part espera eventos en formato { time, note, duration, velocity }
-    // Magenta usa segundos absolutos en startTime.
-
-    // Agrupar notas por instrumento/voz (0-3) para asignarlas al sinte correcto
+    // Agrupar notas por voz
     const notesByVoice = [[], [], [], []];
-
     noteSequence.notes.forEach(note => {
-      // Asegurar que el índice de instrumento esté en rango 0-3
       const voiceIndex = Math.min(Math.max(note.instrument || 0, 0), 3);
       notesByVoice[voiceIndex].push({
         time: note.startTime,
         note: Tone.Frequency(note.pitch, "midi").toNote(),
         duration: note.endTime - note.startTime,
-        velocity: note.velocity ? note.velocity / 127 : 0.5 // Valor por defecto si no hay velocidad
+        velocity: note.velocity ? note.velocity / 127 : 0.6
       });
     });
 
-    // Programar Tone.Part para cada voz
+    console.log(`Player: Cargadas ${noteSequence.notes.length} notas en ${notesByVoice.filter(v => v.length > 0).length} voces`);
+
+    // Limpiar partes anteriores
+    this._disposeParts();
+
+    // Crear nuevas partes y sincronizarlas con el Transport
     this.parts = notesByVoice.map((events, index) => {
+      if (events.length === 0) return null;
+
       const part = new Tone.Part((time, value) => {
         this.synths[index].triggerAttackRelease(
           value.note,
@@ -90,81 +102,98 @@ export class AudioPlayer {
           value.velocity
         );
       }, events);
+
+      // Ya no llamamos a part.start(0) aquí porque Transport.cancel() en play() lo borraría
       return part;
-    });
+    }).filter(p => p !== null);
   }
 
   async play() {
-    if (!this.sequence) {
-      console.warn("No hay secuencia para reproducir");
+    if (!this.sequence || this.parts.length === 0) {
+      console.warn("No hay secuencia cargada para reproducir");
       return;
     }
 
-    // Asegurar que los sintes estén inicializados
     await this.initialize();
-
     await this.startTone();
 
+    if (this.isPlaying) {
+      this.stop();
+      return;
+    }
+
+    // Asegurar que el Transport esté limpio
     Tone.Transport.stop();
-    Tone.Transport.cancel(); // Limpiar eventos anteriores
+    Tone.Transport.cancel(); // Limpia eventos anteriores programados (como el callback de finalización)
+    Tone.Transport.seconds = 0;
 
-    // Re-crear las partes porque Tone.js a veces da problemas al reusarlas
-    await this.loadSequence(this.sequence);
+    // Programar el fin de la reproducción
+    const totalDuration = this.sequence.totalTime ||
+      Math.max(...this.sequence.notes.map(n => n.endTime), 0);
 
+    Tone.Transport.schedule((time) => {
+      Tone.Draw.schedule(() => {
+        if (this.isPlaying) {
+          console.log("Reproducción finalizada automáticamente");
+          this._handlePlaybackEnd();
+        }
+      }, time);
+    }, totalDuration + 0.1);
+
+    // Iniciar el transport con un pequeño offset para estabilidad
+    // Programamos el inicio de las partes justo antes de arrancar el transport
     this.parts.forEach(part => part.start(0));
-    Tone.Transport.bpm.value = 120; // Establecer tempo por defecto
+
     Tone.Transport.start("+0.1");
     this.isPlaying = true;
+    console.log("Iniciando reproducción con Tone.Transport");
   }
 
   stop() {
+    // Primero detenemos el transport
+    Tone.Transport.stop();
+
+    // Limpiamos los eventos programados (incluyendo el de finalización)
+    Tone.Transport.cancel();
+
+    // Garantizamos que el tiempo sea 0 para la próxima reproducción
+    try {
+      if (Tone.Transport.seconds < 0) Tone.Transport.seconds = 0;
+    } catch (e) { }
+
+    // Apagamos notas
+    this.synths.forEach(s => s.releaseAll());
+
     if (this.isPlaying) {
-      Tone.Transport.stop();
-      Tone.Transport.cancel();
-
-      if (this.parts && Array.isArray(this.parts)) {
-        this.parts.forEach(part => {
-          if (part && typeof part.dispose === 'function') {
-            try {
-              part.stop(0); // Usar 0 explícito para evitar errores de punto flotante
-              part.dispose();
-            } catch (e) {
-              // Ignorar errores de Tone.js por valores de punto flotante
-              part.dispose();
-            }
-          }
-        });
-        this.parts = [];
-      }
-
-      // Apagar notas colgadas
-      this.synths.forEach(s => {
-        if (s && typeof s.releaseAll === 'function') {
-          s.releaseAll();
-        }
-      });
-
-      this.isPlaying = false;
+      this._handlePlaybackEnd();
     }
   }
 
-  /**
-   * Limpia todos los recursos de audio
-   */
+  _handlePlaybackEnd() {
+    this.isPlaying = false;
+    // Disparar un evento global o callback si fuera necesario para actualizar la UI
+    // En este caso, main.js maneja el estado del botón basándose en el click, 
+    // pero podemos emitir un evento personalizado.
+    window.dispatchEvent(new CustomEvent('player-stopped'));
+  }
+
+  _disposeParts() {
+    if (this.parts) {
+      this.parts.forEach(part => {
+        if (part) {
+          part.dispose();
+        }
+      });
+      this.parts = [];
+    }
+  }
+
   async destroy() {
     this.stop();
-
-    // Libera los sintetizadores
+    this._disposeParts();
     for (const synth of this.synths) {
-      if (synth && typeof synth.dispose === 'function') {
-        synth.dispose();
-      }
+      synth.dispose();
     }
     this.synths = [];
-
-    // Cierra el contexto de Tone
-    if (Tone.context && typeof Tone.context.close === 'function') {
-      await Tone.context.close();
-    }
   }
 }

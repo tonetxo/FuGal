@@ -393,6 +393,12 @@ btnPlay.addEventListener('click', async () => {
   }
 });
 
+// Escuchar evento de parada del reproductor para actualizar UI
+window.addEventListener('player-stopped', () => {
+  btnPlay.textContent = "▶️ Reproducir";
+  setStatus("Reproducción finalizada.");
+});
+
 // Manejar automáticamente el resume del audio context
 document.addEventListener('click', async function initAudioContext() {
   try {
