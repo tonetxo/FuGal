@@ -44,7 +44,7 @@ export class AudioPlayer {
         }).connect(pan);
 
         // Volumen más audible
-        synth.volume.value = i === 3 ? -4 : -8;
+        synth.volume.value = i === 3 ? -2 : -6;
         this.synths.push(synth);
       }
 
@@ -141,8 +141,11 @@ export class AudioPlayer {
     }, totalDuration + 0.1);
 
     // Iniciar el transport con un pequeño offset para estabilidad
-    // Programamos el inicio de las partes justo antes de arrancar el transport
-    this.parts.forEach(part => part.start(0));
+    // Asegurarnos de que las partes estén detenidas antes de rearrancarlas
+    this.parts.forEach(part => {
+      part.stop();
+      part.start(0);
+    });
 
     Tone.Transport.start("+0.1");
     this.isPlaying = true;
@@ -152,6 +155,13 @@ export class AudioPlayer {
   stop() {
     // Primero detenemos el transport
     Tone.Transport.stop();
+
+    // Detenemos explícitamente cada parte
+    this.parts.forEach(part => {
+      try {
+        part.stop();
+      } catch (e) { }
+    });
 
     // Limpiamos los eventos programados (incluyendo el de finalización)
     Tone.Transport.cancel();
