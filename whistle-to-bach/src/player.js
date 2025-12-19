@@ -1,54 +1,96 @@
 // src/player.js
 import * as Tone from 'tone';
 
+const INSTRUMENT_PRESETS = {
+  violin: {
+    oscillator: { type: "sawtooth" },
+    envelope: { attack: 0.1, decay: 0.2, sustain: 0.8, release: 2.5 }
+  },
+  cello: {
+    oscillator: { type: "sawtooth" },
+    envelope: { attack: 0.15, decay: 0.3, sustain: 0.8, release: 3.0 }
+  },
+  flute: {
+    oscillator: { type: "triangle" },
+    envelope: { attack: 0.1, decay: 0.1, sustain: 1, release: 1.2 }
+  },
+  oboe: {
+    oscillator: { type: "pulse", width: 0.3 },
+    envelope: { attack: 0.08, decay: 0.1, sustain: 0.8, release: 1.5 }
+  },
+  bassoon: {
+    oscillator: { type: "pulse", width: 0.2 },
+    envelope: { attack: 0.08, decay: 0.1, sustain: 0.8, release: 1.5 }
+  },
+  horn: {
+    oscillator: { type: "triangle" },
+    envelope: { attack: 0.15, decay: 0.2, sustain: 0.8, release: 2.5 }
+  },
+  trumpet: {
+    oscillator: { type: "sawtooth" },
+    envelope: { attack: 0.03, decay: 0.1, sustain: 0.7, release: 1.0 }
+  },
+  trombone: {
+    oscillator: { type: "sawtooth" },
+    envelope: { attack: 0.06, decay: 0.2, sustain: 0.8, release: 1.5 }
+  },
+  piano: {
+    oscillator: { type: "sine" },
+    envelope: { attack: 0.005, decay: 1.5, sustain: 0, release: 1.5 }
+  },
+  harpsichord: {
+    oscillator: { type: "pulse", width: 0.1 },
+    envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.8 }
+  }
+};
+
 export class AudioPlayer {
   constructor() {
     this.synths = [];
     this.isPlaying = false;
     this.sequence = null;
     this.parts = [];
+    this.currentInstrumentNames = ['flute', 'oboe', 'trombone', 'cello'];
 
-    // Inicializar Tone.js en estado suspendido
+    // Cadena de Mastering (ajustada para máxima claridad sin distorsión)
+    this.limiter = new Tone.Limiter(-0.5).toDestination();
+    this.masterGain = new Tone.Gain(1.0).connect(this.limiter);
+
     this.isInitialized = false;
   }
 
   async initialize() {
     if (!this.isInitialized) {
-      // Crear 4 sintetizadores, uno por voz (Soprano, Alto, Tenor, Bajo)
-      const synthOptions = {
-        oscillator: { type: "triangle" },
-        envelope: {
-          attack: 0.03,
-          decay: 0.1,
-          sustain: 0.4,
-          release: 0.8
-        }
-      };
-
-      const bassSynthOptions = {
-        oscillator: { type: "sawtooth" },
-        envelope: {
-          attack: 0.02,
-          decay: 0.1,
-          sustain: 0.5,
-          release: 0.8
-        }
-      };
-
       for (let i = 0; i < 4; i++) {
-        const pan = new Tone.Panner((i - 1.5) * 0.4).toDestination();
-        const options = i === 3 ? bassSynthOptions : synthOptions;
+        const pan = new Tone.Panner((i - 1.5) * 0.4).connect(this.masterGain);
+        const instName = this.currentInstrumentNames[i];
+        const preset = INSTRUMENT_PRESETS[instName] || INSTRUMENT_PRESETS.flute;
+
         const synth = new Tone.PolySynth(Tone.Synth, {
-          maxPolyphony: 8,
-          ...options
+          maxPolyphony: 16,
+          ...preset
         }).connect(pan);
 
-        // Volumen más audible
-        synth.volume.value = i === 3 ? -2 : -6;
+        // Volumen base ajustado
+        synth.volume.value = -8;
         this.synths.push(synth);
       }
-
       this.isInitialized = true;
+    }
+  }
+
+  /**
+   * Cambia los instrumentos en tiempo real
+   */
+  async setInstruments(instrumentNames) {
+    this.currentInstrumentNames = instrumentNames;
+    if (this.isInitialized) {
+      for (let i = 0; i < 4; i++) {
+        const preset = INSTRUMENT_PRESETS[instrumentNames[i]] || INSTRUMENT_PRESETS.piano;
+        this.synths[i].set({ ...preset });
+      }
+    } else {
+      await this.initialize();
     }
   }
 
@@ -138,7 +180,7 @@ export class AudioPlayer {
           this._handlePlaybackEnd();
         }
       }, time);
-    }, totalDuration + 0.1);
+    }, totalDuration + 2.0); // Buffer más largo para que terminen las resonancias
 
     // Iniciar el transport con un pequeño offset para estabilidad
     // Asegurarnos de que las partes estén detenidas antes de rearrancarlas

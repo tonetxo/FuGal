@@ -23,19 +23,27 @@ export class FugueGenerator {
     /**
      * Genera una fuga a 4 voces a partir del sujeto (melodía transcrita)
      * @param {Object} inputSequence - NoteSequence de Magenta con la melodía
+     * @param {Object} options - Opciones de generación (density, complexity, codaLength)
      * @returns {Object} NoteSequence con 4 voces, tiempos cuantizados
      */
-    generate(inputSequence) {
+    generate(inputSequence, options = {}) {
         if (!inputSequence || !inputSequence.notes || inputSequence.notes.length === 0) {
             throw new Error("No hay notas válidas para generar la fuga.");
         }
+
+        // Parámetros de generación (defaults)
+        this.options = {
+            density: options.density ?? 50,       // 0-100: Densidad de notas en episodios
+            complexity: options.complexity ?? 70, // 0-100: Cantidad de contrapunto libre
+            codaLength: options.codaLength ?? 8    // Beats: Duración de la coda
+        };
 
         // Obtener el BPM de la secuencia de entrada para mantener la consistencia rítmica
         const qpm = inputSequence.tempos?.[0]?.qpm || 120;
         // 1 beat = 1/8 note (corchea). Si qpm es negra, qpm*2 son corcheas por min.
         this.beatDuration = 60 / (qpm * 2);
 
-        console.log(`Generando fuga algorítmica a ${qpm} BPM (corchea = ${this.beatDuration}s)...`);
+        console.log(`Generando fuga algorítmica (${this.options.density}% d, ${this.options.complexity}% c) a ${qpm} BPM...`);
 
         // 1. Extraer y CUANTIZAR el sujeto
         const subject = this.extractAndQuantizeSubject(inputSequence.notes);
@@ -53,18 +61,25 @@ export class FugueGenerator {
         // 5. Construir coda/stretto
         const coda = this.buildCoda(subject, exposition.endBeat);
 
-        // 6. Combinar notas y convertir beats a segundos
+        // 6. Combinar notas y convertir beats a segundos (LIMPIO Y SIN JITTER)
         const allNotes = [
             ...exposition.notes,
             ...coda.notes
-        ].map(n => ({
-            pitch: n.pitch,
-            startTime: n.startBeat * this.beatDuration,
-            endTime: n.endBeat * this.beatDuration,
-            velocity: n.velocity || 80,
-            instrument: n.voice,
-            voice: n.voice
-        }));
+        ].map(n => {
+            // CLAMPING FINAL DE SEGURIDAD: Asegurar que nada se sale del rango de la voz
+            const voiceRange = [this.voiceRanges.soprano, this.voiceRanges.alto,
+            this.voiceRanges.tenor, this.voiceRanges.bass][n.voice];
+            const clampedPitch = this.clampPitch(n.pitch, voiceRange.min, voiceRange.max);
+
+            return {
+                pitch: clampedPitch,
+                startTime: n.startBeat * this.beatDuration,
+                endTime: n.endBeat * this.beatDuration,
+                velocity: n.velocity || 80,
+                instrument: n.voice,
+                voice: n.voice
+            };
+        });
 
         const totalBeats = coda.endBeat;
         const totalTime = totalBeats * this.beatDuration;
@@ -198,9 +213,28 @@ export class FugueGenerator {
             notes.push({ ...n, voice: 0 });
         });
 
-        // Extensión después de la exposición para dar más desarrollo
-        const postExpoStart = entry4Beat + subjectDuration;
-        const episode = this.generateEpisode(subject, postExpoStart);
+        // EXPOSICIÓN EXTENDIDA: Rellenar huecos entre entradas de forma monofónica y en rango
+        const expoEndBeat = entry4Beat + subjectDuration;
+
+        [0, 1, 2, 3].forEach(v => {
+            const voiceRange = [this.voiceRanges.soprano, this.voiceRanges.alto,
+            this.voiceRanges.tenor, this.voiceRanges.bass][v];
+            const voiceNotes = notes.filter(n => n.voice === v);
+            const lastNote = voiceNotes[voiceNotes.length - 1];
+
+            if (lastNote && lastNote.endBeat < expoEndBeat) {
+                // Generar puente directamente en el rango de la voz
+                const bridge = this.generateFreeCounterpoint(subject, lastNote.endBeat - subject[0].startBeat, voiceRange);
+
+                bridge.forEach(n => {
+                    if (n.startBeat >= lastNote.endBeat && n.startBeat < expoEndBeat) {
+                        notes.push({ ...n, voice: v, endBeat: Math.min(n.endBeat, expoEndBeat) });
+                    }
+                });
+            }
+        });
+
+        const episode = this.generateEpisode(subject, expoEndBeat);
         notes.push(...episode.notes);
 
         return {
@@ -209,63 +243,85 @@ export class FugueGenerator {
         };
     }
 
-    /**
-     * Genera contrapunto libre basado en un tema (variación rítmica/melódica)
-     */
-    generateFreeCounterpoint(theme, offsetBeat) {
-        if (theme.length === 0) return [];
+    generateFreeCounterpoint(theme, offsetBeat, range = null) {
+        if (!theme || theme.length === 0) return [];
 
-        // Generar una variación: invertir direcciones y ajustar ritmo
         const result = [];
-        const avgPitch = theme.reduce((sum, n) => sum + n.pitch, 0) / theme.length;
+        const complexity = this.options?.complexity ?? 70;
+        const prob = complexity / 100;
+
+        let lastPitch = theme[0].pitch;
 
         theme.forEach((n, i) => {
-            if (i % 2 === 0) { // Usar la mitad de las notas
-                const interval = n.pitch - avgPitch;
+            // Basar la probabilidad en la complejidad
+            if (i % 2 === 0 || Math.random() < prob) {
+                // Generar intervalos más variados (hasta una 5ª: +/- 7 semitonos)
+                let interval = Math.floor(Math.random() * 9) - 4; // -4 a +4 para fluidez, o saltos ocasionales
+                let nextPitch = lastPitch + interval;
+
+                // Suavizar si nos alejamos de la tónica del sujeto
+                const tonic = theme[0].pitch;
+                if (Math.abs(nextPitch - tonic) > 15) {
+                    nextPitch += (nextPitch > tonic ? -3 : 3);
+                }
+
                 result.push({
-                    pitch: Math.round(avgPitch - interval * 0.5), // Inversión parcial
+                    pitch: nextPitch,
                     startBeat: n.startBeat + offsetBeat,
                     endBeat: n.endBeat + offsetBeat,
-                    velocity: 65
+                    velocity: 60 + Math.random() * 15
                 });
+                lastPitch = nextPitch;
             }
         });
 
+        // Transponer al rango si se proporciona
+        if (range) {
+            return this.transposeToRange(result, range);
+        }
         return result;
     }
 
-    /**
-     * Genera un episodio (desarrollo) con secuencias basadas en el sujeto
-     */
     generateEpisode(subject, startBeat) {
         const notes = [];
-        const motif = subject.slice(0, Math.min(4, subject.length)); // Motivo corto
+        const motif = subject.slice(0, Math.min(4, subject.length));
 
-        // Secuencia descendente por grados
-        const transpositions = [0, -2, -4, -2]; // Patrón de transposición
+        const density = this.options?.density || 50;
+        const numRepetitions = Math.max(3, Math.floor(density / 8)); // 3 a 12 reps
 
-        transpositions.forEach((trans, i) => {
-            const beatOffset = startBeat + (i * 4); // Cada 4 beats
-            const voice = i % 4; // Rotar entre voces
-            const range = [this.voiceRanges.soprano, this.voiceRanges.alto,
-            this.voiceRanges.tenor, this.voiceRanges.bass][voice];
+        const direction = Math.random() > 0.5 ? 1 : -1;
 
-            const transposed = this.transposeToRange(
-                motif.map(n => ({ ...n, pitch: n.pitch + trans })),
-                range
-            );
+        for (let i = 0; i < numRepetitions; i++) {
+            const trans = i * 2 * direction;
+            const beatOffset = startBeat + (i * 4);
 
-            transposed.forEach(n => {
-                notes.push({
-                    ...n,
-                    startBeat: n.startBeat + beatOffset,
-                    endBeat: n.endBeat + beatOffset,
-                    voice: voice
+            // Voces activas según densidad (más voces si es más denso)
+            const numVoices = density > 75 ? 3 : (density > 25 ? 2 : 1);
+
+            for (let v = 0; v < numVoices; v++) {
+                // Rotación de voces que garantiza que todas participen (0, 1, 2, 3)
+                const voice = (i + v) % 4;
+                const range = [this.voiceRanges.soprano, this.voiceRanges.alto,
+                this.voiceRanges.tenor, this.voiceRanges.bass][voice];
+
+                const transposed = this.transposeToRange(
+                    motif.map(n => ({ ...n, pitch: n.pitch + trans + (Math.random() > 0.9 ? 1 : 0) })),
+                    range
+                );
+
+                transposed.forEach(n => {
+                    notes.push({
+                        ...n,
+                        startBeat: n.startBeat + beatOffset,
+                        endBeat: n.endBeat + beatOffset,
+                        voice: voice,
+                        velocity: 55 + Math.random() * 20 // Velocidad variada para más naturalidad
+                    });
                 });
-            });
-        });
+            }
+        }
 
-        const endBeat = startBeat + 16; // 2 compases de episodio
+        const endBeat = startBeat + (numRepetitions * 4);
         return { notes, endBeat };
     }
 
@@ -274,10 +330,8 @@ export class FugueGenerator {
      */
     buildCoda(subject, startBeat) {
         const notes = [];
-
-        // Stretto: entradas muy cercanas (cada 2 beats)
+        const strettoInterval = this.options?.complexity > 50 ? 2 : 4;
         const shortSubject = subject.slice(0, Math.min(4, subject.length));
-        const strettoInterval = 2; // Entradas cada 2 beats
 
         const voices = [
             { range: this.voiceRanges.soprano, voice: 0 },
@@ -288,6 +342,7 @@ export class FugueGenerator {
 
         let maxEndBeat = startBeat;
 
+        // Coda: Stretto con relleno
         voices.forEach((v, i) => {
             const entryBeat = startBeat + (i * strettoInterval);
             const transposed = this.transposeToRange(shortSubject, v.range);
@@ -302,40 +357,63 @@ export class FugueGenerator {
                 });
                 maxEndBeat = Math.max(maxEndBeat, endBeat);
             });
+
+            // Rellenar desde el fin del motivo hasta la cadencia para evitar silencios
+            const lastEnd = entryBeat + this.getSequenceDuration(shortSubject);
+            const codaBeatsValue = parseInt(this.options?.codaLength || 8);
+            const targetCadenceBeat = Math.ceil((maxEndBeat + (codaBeatsValue / 2)) / this.beatsPerMeasure) * this.beatsPerMeasure;
+
+            if (lastEnd < targetCadenceBeat) {
+                // Generar puente ya dentro del rango de la voz
+                const bridge = this.generateFreeCounterpoint(shortSubject, lastEnd - shortSubject[0].startBeat, v.range);
+
+                bridge.forEach(n => {
+                    if (n.startBeat >= lastEnd && n.startBeat < targetCadenceBeat) {
+                        notes.push({ ...n, voice: v.voice, endBeat: Math.min(n.endBeat, targetCadenceBeat) });
+                    }
+                });
+            }
         });
 
-        // Alinear al siguiente compás para la cadencia
-        const cadenceBeat = Math.ceil(maxEndBeat / this.beatsPerMeasure) * this.beatsPerMeasure;
+        // La codaLength de las opciones controla cuánto esperamos para la cadencia final
+        const codaBeats = parseInt(this.options?.codaLength || 8);
+        const cadenceBeat = Math.ceil((maxEndBeat + (codaBeats / 2)) / this.beatsPerMeasure) * this.beatsPerMeasure;
         const cadenceDuration = 4; // Blanca
 
-        // Acorde final en todas las voces (respetando tesituras)
+        // Acorde final
         const tonicPitch = subject[0]?.pitch || 60;
-        const tonicClass = tonicPitch % 12; // Clase de pitch (0-11)
+        const tonicClass = tonicPitch % 12;
 
-        // Calcular pitches del acorde en las tesituras correctas
         const finalChord = [
-            { targetPitch: tonicClass, range: this.voiceRanges.soprano, voice: 0 },  // Tónica
-            { targetPitch: (tonicClass + 4) % 12, range: this.voiceRanges.alto, voice: 1 },  // 3ª mayor
-            { targetPitch: (tonicClass + 7) % 12, range: this.voiceRanges.tenor, voice: 2 },  // 5ª
-            { targetPitch: tonicClass, range: this.voiceRanges.bass, voice: 3 }   // Tónica (bajo)
+            { targetPitch: tonicClass, range: this.voiceRanges.soprano, voice: 0 },
+            { targetPitch: (tonicClass + 4) % 12, range: this.voiceRanges.alto, voice: 1 },
+            { targetPitch: (tonicClass + 7) % 12, range: this.voiceRanges.tenor, voice: 2 },
+            { targetPitch: tonicClass, range: this.voiceRanges.bass, voice: 3 }
         ];
 
         finalChord.forEach(chord => {
-            // Encontrar el pitch dentro del rango de la voz
-            let pitch = chord.range.min + chord.targetPitch;
+            // Encontrar la nota del acorde más cercana a la última nota que tocó esta voz
+            const voiceNotes = notes.filter(n => n.voice === chord.voice);
+            const lastNote = voiceNotes[voiceNotes.length - 1];
+            const lastPitch = lastNote ? lastNote.pitch : (chord.range.min + chord.range.max) / 2;
+
+            let pitch = lastPitch;
+            // Ajustar a la clase de tónica deseada
+            let currentClass = pitch % 12;
+            let diff = chord.targetPitch - currentClass;
+            if (diff > 6) diff -= 12;
+            if (diff < -6) diff += 12;
+            pitch += diff;
+
+            // Asegurar que está en rango
             while (pitch < chord.range.min) pitch += 12;
             while (pitch > chord.range.max) pitch -= 12;
-            // Asegurar que está en el centro del rango
-            const center = (chord.range.min + chord.range.max) / 2;
-            while (pitch < center - 6 && pitch + 12 <= chord.range.max) pitch += 12;
-            while (pitch > center + 6 && pitch - 12 >= chord.range.min) pitch -= 12;
-
 
             notes.push({
                 pitch: pitch,
                 startBeat: cadenceBeat,
                 endBeat: cadenceBeat + cadenceDuration,
-                velocity: 90,
+                velocity: 100, // Acorde final fuerte
                 voice: chord.voice
             });
         });

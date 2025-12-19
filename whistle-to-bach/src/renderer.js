@@ -37,16 +37,16 @@ export class ScoreRenderer {
       abcjs.renderAbc(div, abcNotation, {
         responsive: 'resize',
         add_classes: true,
-        scale: 1.4,          // Aumentar tamaño para mejor visibilidad
-        paddingtop: 20,
-        paddingbottom: 20,
-        paddingright: 20,
-        paddingleft: 20,
-        staffwidth: 800,     // Ancho de referencia
-        wrap: {              // Forzar el salto de línea para que no se corte
-          minSpacing: 1.8,
-          maxSpacing: 2.8,
-          preferredMeasuresPerLine: 4
+        scale: 1.05,         // Escala ajustada para máxima claridad sin desborde
+        paddingtop: 15,
+        paddingbottom: 15,
+        paddingright: 15,
+        paddingleft: 15,
+        staffwidth: 1100,    // Mayor ancho base para acomodar mejor los compases
+        wrap: {              // Control preciso de la distribución horizontal
+          minSpacing: 1.5,
+          maxSpacing: 3.0,
+          preferredMeasuresPerLine: 3 // 3 compases suele ser ideal para 4 pentagramas
         }
       });
     } catch (err) {
@@ -118,7 +118,10 @@ K:C
 
     voiceKeys.forEach((voiceKey, idx) => {
       const voiceNotes = voices[voiceKey];
-      const clef = idx < 2 ? 'treble' : 'bass';
+      // Adaptar clave según modo y voz
+      let clef = idx < 2 ? 'treble' : 'bass';
+      if (idx === 2 && layoutMode === 'open-score') clef = 'alto';
+
       const voiceName = ['Soprano', 'Alto', 'Tenor', 'Bass'][idx] || `V${idx}`;
       const header = `V:${idx + 1} clef=${clef} name="${voiceName}"`;
 
@@ -261,28 +264,26 @@ K:C
 
     // Nombres de notas en ABC
     const noteNames = ['C', '^C', 'D', '^D', 'E', 'F', '^F', 'G', '^G', 'A', '^A', 'B'];
-    const noteName = noteNames[midi % 12];
+    const idx = ((midi % 12) + 12) % 12;
+    const noteName = noteNames[idx];
     const octave = Math.floor(midi / 12) - 1;
 
-    // En ABC:
-    // C4 (middle C, MIDI 60) = C
-    // C5 = c (lowercase)
-    // C6 = c' (lowercase with ')
-    // C3 = C, (uppercase with ,)
-    // C2 = C,, (uppercase with ,,)
-
     if (octave === 4) {
-      return noteName; // Octava central: C, D, E...
-    } else if (octave === 5) {
-      return noteName.toLowerCase(); // Una octava arriba: c, d, e...
-    } else if (octave >= 6) {
-      const primes = "'".repeat(octave - 5);
-      return noteName.toLowerCase() + primes; // c', c''...
-    } else if (octave === 3) {
-      return noteName + ','; // Una octava abajo: C,, D,,...
+      return noteName;
+    } else if (octave > 4) {
+      const primesCount = octave - 4;
+      let name = noteName.toLowerCase();
+      // Octava 5 es c, d, e... sin comillas
+      // Octava 6 es c', d', e'
+      if (primesCount > 1) {
+        name += "'".repeat(primesCount - 1);
+      }
+      return name;
     } else {
-      const commas = ','.repeat(4 - octave);
-      return noteName + commas; // C,,, ...
+      // Octava 3 es C,
+      // Octava 2 es C,,
+      const commasCount = 4 - octave;
+      return noteName + ",".repeat(commasCount);
     }
   }
 }

@@ -28,11 +28,22 @@ let currentSequence = null;      // Secuencia final (con armonización)
 const btnRecord = document.getElementById('btn-record');
 const fileInput = document.getElementById('file-upload');
 const btnProcess = document.getElementById('btn-process');
+const btnRebachify = document.getElementById('btn-rebachify');
 const btnPlay = document.getElementById('btn-play');
 const btnRetranscribe = document.getElementById('btn-retranscribe');
 const btnExportMidi = document.getElementById('btn-export-midi');
 const layoutSelector = document.getElementById('layout-mode');
+const compositionModeSelector = document.getElementById('composition-mode');
+const fugueSettingsPanel = document.getElementById('fugue-settings-panel');
 const statusEl = document.getElementById('status');
+
+// Selectores de instrumentos
+const instSelectors = [
+  document.getElementById('voice-0-inst'),
+  document.getElementById('voice-1-inst'),
+  document.getElementById('voice-2-inst'),
+  document.getElementById('voice-3-inst')
+];
 
 // VU Meter
 const vuMeter = document.getElementById('vu-meter');
@@ -208,6 +219,24 @@ function getTranscriptionOptions() {
 }
 
 /**
+ * Obtiene las opciones de generación de fuga
+ */
+function getFugueOptions() {
+  return {
+    density: parseInt(document.getElementById('fugue-density')?.value ?? 50),
+    complexity: parseInt(document.getElementById('fugue-complexity')?.value ?? 70),
+    codaLength: parseInt(document.getElementById('fugue-coda')?.value ?? 8)
+  };
+}
+
+/**
+ * Obtiene los instrumentos seleccionados
+ */
+function getSelectedInstruments() {
+  return instSelectors.map(sel => sel?.value || 'flute');
+}
+
+/**
  * Transcribe el audio y muestra la partitura de la melodía
  */
 async function transcribeAndShow() {
@@ -235,6 +264,7 @@ async function transcribeAndShow() {
     await player.loadSequence(transcribedSequence);
     btnPlay.disabled = false;
     btnProcess.disabled = false;
+    if (btnRebachify) btnRebachify.disabled = true; // Solo habilitar después del primer Bachify
     if (btnRetranscribe) btnRetranscribe.disabled = false;
     if (btnExportMidi) btnExportMidi.disabled = false;
 
@@ -345,12 +375,10 @@ btnProcess.addEventListener('click', async () => {
 
     if (mode === 'fugue') {
       // Modo Fuga: Usar FugueGenerator algorítmico
-      setStatus("Generando fuga a 4 voces (algorítmico)...");
-      currentSequence = fugueGen.generate(transcribedSequence);
+      const fugueOptions = getFugueOptions();
+      currentSequence = fugueGen.generate(transcribedSequence, fugueOptions);
     } else {
-      // Modo Coral: Usar Coconet para armonización
-      setStatus("Componiendo coral a 4 voces (Coconet)... Esto puede tardar.");
-      currentSequence = await composer.harmonize(transcribedSequence);
+      currentSequence = await composer.compose(transcribedSequence);
     }
 
     if (!currentSequence) {
@@ -362,17 +390,68 @@ btnProcess.addEventListener('click', async () => {
     const modeLabel = mode === 'fugue' ? 'Fuga' : 'Coral';
     setStatus(`¡${modeLabel} terminada! ${currentSequence.notes.length} notas en 4 voces.`);
 
-    // Renderizar y cargar en el reproductor
+    // Renderizar y cargar en el reproductor con los instrumentos actuales
     const layoutMode = layoutSelector?.value || 'grand-staff';
     renderer.render(currentSequence, layoutMode);
+    await player.setInstruments(getSelectedInstruments());
     await player.loadSequence(currentSequence);
     btnPlay.disabled = false;
     btnProcess.disabled = false;
+    if (btnRebachify && mode === 'fugue') btnRebachify.disabled = false;
 
   } catch (err) {
     console.error(err);
     setStatus("Error durante el proceso: " + err.message);
     btnProcess.disabled = false;
+  }
+});
+
+async function runRebachify() {
+  if (!transcribedSequence || !btnRebachify) return;
+
+  try {
+    setStatus("Regenerando fuga con nuevos parámetros...");
+    const fugueOptions = getFugueOptions();
+    currentSequence = fugueGen.generate(transcribedSequence, fugueOptions);
+
+    const layoutMode = layoutSelector?.value || 'grand-staff';
+    renderer.render(currentSequence, layoutMode);
+    await player.setInstruments(getSelectedInstruments());
+    await player.loadSequence(currentSequence);
+    setStatus("Fuga regenerada correctamente.");
+  } catch (err) {
+    console.error("Error en ReBachify:", err);
+    setStatus("Error al regenerar la fuga.");
+  }
+}
+
+if (btnRebachify) {
+  btnRebachify.addEventListener('click', runRebachify);
+}
+
+// Mostrar/Ocultar panel de ajustes de fuga
+if (compositionModeSelector && fugueSettingsPanel) {
+  compositionModeSelector.addEventListener('change', () => {
+    const isFugue = compositionModeSelector.value === 'fugue';
+    fugueSettingsPanel.style.display = isFugue ? 'block' : 'none';
+    if (btnRebachify) {
+      btnRebachify.style.display = isFugue ? 'inline-block' : 'none';
+    }
+  });
+  // Estado inicial
+  const isFugue = compositionModeSelector.value === 'fugue';
+  fugueSettingsPanel.style.display = isFugue ? 'block' : 'none';
+  if (btnRebachify) {
+    btnRebachify.style.display = isFugue ? 'inline-block' : 'none';
+  }
+}
+
+// Configurar listeners de instrumentos
+instSelectors.forEach(sel => {
+  if (sel) {
+    sel.addEventListener('change', () => {
+      player.setInstruments(getSelectedInstruments());
+    });
   }
 });
 
@@ -391,6 +470,7 @@ btnPlay.addEventListener('click', async () => {
     setStatus("Reproducción detenida.");
   } else {
     setStatus("Reproduciendo...");
+    await player.setInstruments(getSelectedInstruments());
     await player.play();
     btnPlay.textContent = "⏹️ Detener";
   }

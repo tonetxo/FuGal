@@ -218,11 +218,35 @@
       color: #B8860B;
     }
 
-    .settings-grid {
+    .settings-grid,
+    .instruments-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1.2rem;
       margin-top: 15px;
+    }
+
+    .inst-select {
+      width: 100%;
+      padding: 0.6rem;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .inst-select:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: #64b5f6;
+    }
+
+    .inst-select:focus {
+      outline: none;
+      border-color: #2196f3;
+      box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
     }
 
     .setting {
@@ -412,7 +436,18 @@
     <input id="file-upload" type="file" accept="audio/*">
 
     <button id="btn-process" class="btn-process" disabled>✨ Bachify!</button>
+    <button id="btn-rebachify" class="btn-rebachify" style="background: #795548; color: white;" disabled>🔄
+      ReBachify!</button>
     <button id="btn-play" class="btn-play" disabled>▶️ Reproducir</button>
+  </div>
+
+  <!-- Selector de Modo de Composición -->
+  <div class="mode-selector">
+    <label>🎼 Modo de Composición:</label>
+    <select id="composition-mode">
+      <option value="fugue">🎵 Fuga (4 voces contrapuntísticas)</option>
+      <option value="coral">🎹 Coral Bach (armonización Coconet)</option>
+    </select>
   </div>
 
   <!-- Selector de Layout de Partitura -->
@@ -423,6 +458,78 @@
       <option value="open-score">🎻 Cuarteto / 4 Pentagramas (abierto)</option>
     </select>
   </div>
+
+  <!-- Panel de Selección de Instrumentos -->
+  <details class="settings-panel" id="instruments-panel">
+    <summary>🎻 Instrumentos por Voz</summary>
+    <div class="instruments-grid">
+      <div class="setting">
+        <label>Soprano:</label>
+        <select id="voice-0-inst" class="inst-select">
+          <option value="violin">Violín</option>
+          <option value="flute" selected>Flauta</option>
+          <option value="oboe">Oboe</option>
+          <option value="trumpet">Trompeta</option>
+          <option value="piano">Piano</option>
+          <option value="harpsichord">Clave</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Alto:</label>
+        <select id="voice-1-inst" class="inst-select">
+          <option value="violin">Violín</option>
+          <option value="flute">Flauta</option>
+          <option value="oboe" selected>Oboe</option>
+          <option value="horn">Trompa</option>
+          <option value="piano">Piano</option>
+          <option value="harpsichord">Clave</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Tenor:</label>
+        <select id="voice-2-inst" class="inst-select">
+          <option value="cello">Violonchelo</option>
+          <option value="bassoon">Fagot</option>
+          <option value="trombone" selected>Trombón</option>
+          <option value="horn">Trompa</option>
+          <option value="piano">Piano</option>
+          <option value="harpsichord">Clave</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Bajo:</label>
+        <select id="voice-3-inst" class="inst-select">
+          <option value="cello" selected>Violonchelo</option>
+          <option value="bassoon">Fagot</option>
+          <option value="trombone">Trombón</option>
+          <option value="piano">Piano</option>
+          <option value="harpsichord">Clave</option>
+        </select>
+      </div>
+    </div>
+  </details>
+
+  <!-- Panel de Ajustes de Fuga -->
+  <details class="settings-panel" id="fugue-settings-panel" style="display: none;">
+    <summary>🎹 Ajustes de Fuga (Algorítmica)</summary>
+    <div class="settings-grid">
+      <div class="setting">
+        <label for="fugue-density">🌊 Densidad de Notas</label>
+        <input type="range" id="fugue-density" min="0" max="100" value="50">
+        <span id="fugue-density-value">50%</span>
+      </div>
+      <div class="setting">
+        <label for="fugue-complexity">🧠 Complejidad de Voces</label>
+        <input type="range" id="fugue-complexity" min="0" max="100" value="70">
+        <span id="fugue-complexity-value">70%</span>
+      </div>
+      <div class="setting">
+        <label for="fugue-coda">🔚 Duración Coda</label>
+        <input type="range" id="fugue-coda" min="0" max="12" step="4" value="8">
+        <span id="fugue-coda-value">8 beats</span>
+      </div>
+    </div>
+  </details>
 
   <!-- Panel de Ajustes Colapsable -->
   <details class="settings-panel" id="settings-panel">
@@ -485,7 +592,19 @@
       themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
     });
 
-    // Sliders - actualizar valores mostrados
+    // Sliders de Fuga
+    ['fugue-density', 'fugue-complexity', 'fugue-coda'].forEach(id => {
+      const slider = document.getElementById(id);
+      const valueSpan = document.getElementById(id + '-value');
+      if (slider && valueSpan) {
+        slider.addEventListener('input', () => {
+          const suffix = id === 'fugue-coda' ? ' beats' : '%';
+          valueSpan.textContent = slider.value + suffix;
+        });
+      }
+    });
+
+    // Sliders de Transcripción
     ['sensitivity', 'bpm', 'smoothing', 'silence'].forEach(id => {
       const slider = document.getElementById(id);
       const valueSpan = document.getElementById(id + '-value');
