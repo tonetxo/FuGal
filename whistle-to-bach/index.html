@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whistle to Bach 🎵</title>
+  <style>
+    :root {
+      --bg-primary: #f5f5f5;
+      --bg-secondary: white;
+      --text-primary: #333;
+      --text-secondary: #666;
+      --text-muted: #999;
+      --shadow: rgba(0, 0, 0, 0.1);
+      --border: #ddd;
+    }
+
+    [data-theme="dark"] {
+      --bg-primary: #1a1a2e;
+      --bg-secondary: #16213e;
+      --text-primary: #eee;
+      --text-secondary: #aaa;
+      --text-muted: #666;
+      --shadow: rgba(0, 0, 0, 0.3);
+      --border: #333;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background 0.3s, color 0.3s;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      margin: 0;
+      flex: 1;
+    }
+
+    .theme-toggle {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 18px;
+      transition: all 0.3s;
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.1);
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      background: var(--bg-secondary);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px var(--shadow);
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px var(--shadow);
+    }
+
+    button:disabled {
+      background: #666 !important;
+      color: #999;
+      cursor: not-allowed;
+    }
+
+    .btn-record {
+      background: #8B4513;
+      color: white;
+    }
+
+    /* Saddle Brown / Ocre oscuro */
+    .btn-record:hover:not(:disabled) {
+      background: #A0522D;
+    }
+
+    .btn-record.recording {
+      background: #CD853F;
+      animation: pulse 1s infinite;
+    }
+
+    /* Peru / Bronce */
+
+    .btn-process {
+      background: #B8860B;
+      color: white;
+    }
+
+    /* Dark Goldenrod / Bronce */
+    .btn-process:hover:not(:disabled) {
+      background: #DAA520;
+    }
+
+    .btn-play {
+      background: #CD7F32;
+      color: white;
+    }
+
+    /* Bronze */
+    .btn-play:hover:not(:disabled) {
+      background: #B87333;
+    }
+
+    #status {
+      text-align: center;
+      font-style: italic;
+      color: var(--text-secondary);
+      height: 1.5em;
+      margin-bottom: 10px;
+    }
+
+    #score-container {
+      background: var(--bg-secondary);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px var(--shadow);
+      overflow-x: auto;
+      min-height: 400px;
+    }
+
+    /* Partitura en modo oscuro - TODO BLANCO */
+    [data-theme="dark"] #score-container svg * {
+      fill: #ffffff !important;
+      stroke: #ffffff !important;
+      color: #ffffff !important;
+      stroke-width: 0.5px;
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.7;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .file-upload-label {
+      padding: 10px 20px;
+      background: #A0522D;
+      /* Sienna / Ocre */
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-block;
+      transition: all 0.2s;
+    }
+
+    .file-upload-label:hover {
+      background: #8B4513;
+      transform: translateY(-2px);
+    }
+
+    .placeholder {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 100px 20px;
+    }
+
+    /* Panel de Ajustes */
+    .settings-panel {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      padding: 15px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 5px var(--shadow);
+    }
+
+    .settings-panel summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: var(--text-primary);
+      user-select: none;
+    }
+
+    .settings-panel summary:hover {
+      color: #B8860B;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .setting {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .setting label {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .setting input[type="range"] {
+      width: 100%;
+      accent-color: #B8860B;
+    }
+
+    .setting span {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .btn-retranscribe {
+      margin-top: 15px;
+      width: 100%;
+      background: #B8860B;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-retranscribe:hover:not(:disabled) {
+      background: #DAA520;
+    }
+
+    .btn-retranscribe:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div style="width: 50px;"></div>
+    <h1>Whistle to Bach 🎼</h1>
+    <button class="theme-toggle" id="theme-toggle" title="Cambiar tema">🌙</button>
+  </header>
+
+  <div id="status">Listo para empezar.</div>
+
+  <div class="controls">
+    <button id="btn-record" class="btn-record">🎙️ Grabar (Silbar)</button>
+
+    <label for="file-upload" class="file-upload-label">📁 Subir Audio</label>
+    <input id="file-upload" type="file" accept="audio/*">
+
+    <button id="btn-process" class="btn-process" disabled>✨ Bachify!</button>
+    <button id="btn-play" class="btn-play" disabled>▶️ Reproducir</button>
+  </div>
+
+  <!-- Panel de Ajustes Colapsable -->
+  <details class="settings-panel" id="settings-panel">
+    <summary>⚙️ Ajustes de Transcripción</summary>
+    <div class="settings-grid">
+      <div class="setting">
+        <label for="sensitivity">🎯 Sensibilidad (cents)</label>
+        <input type="range" id="sensitivity" min="30" max="150" value="80">
+        <span id="sensitivity-value">80</span>
+      </div>
+      <div class="setting">
+        <label for="bpm">🎵 BPM</label>
+        <input type="range" id="bpm" min="60" max="140" value="90">
+        <span id="bpm-value">90</span>
+      </div>
+      <div class="setting">
+        <label for="smoothing">🔄 Suavizado (frames)</label>
+        <input type="range" id="smoothing" min="1" max="11" step="2" value="5">
+        <span id="smoothing-value">5</span>
+      </div>
+      <div class="setting">
+        <label for="silence">🔇 Silencio mín (ms)</label>
+        <input type="range" id="silence" min="50" max="300" value="150">
+        <span id="silence-value">150</span>
+      </div>
+    </div>
+    <button id="btn-retranscribe" class="btn-retranscribe" disabled>🔄 Re-transcribir</button>
+  </details>
+
+  <div id="score-container">
+    <p class="placeholder">La partitura aparecerá aquí...</p>
+  </div>
+
+  <script>
+    // Theme toggle logic
+    const themeToggle = document.getElementById('theme-toggle');
+    const html = document.documentElement;
+
+    // Check saved preference or system preference
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme) {
+      html.setAttribute('data-theme', savedTheme);
+      themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+    } else if (prefersDark) {
+      html.setAttribute('data-theme', 'dark');
+      themeToggle.textContent = '☀️';
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+    });
+
+    // Sliders - actualizar valores mostrados
+    ['sensitivity', 'bpm', 'smoothing', 'silence'].forEach(id => {
+      const slider = document.getElementById(id);
+      const valueSpan = document.getElementById(id + '-value');
+      if (slider && valueSpan) {
+        slider.addEventListener('input', () => {
+          valueSpan.textContent = slider.value;
+        });
+      }
+    });
+  </script>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
