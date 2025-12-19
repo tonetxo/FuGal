@@ -99,45 +99,78 @@ K:C
 
   /**
    * Convierte un array de notas a una línea ABC
+   * Cuenta beats correctamente para generar barras de compás en 4/4
    */
   notesToABCLine(notes, totalTime) {
     if (!notes || notes.length === 0) return 'z8 |\n';
 
     let abcLine = '';
     let currentTime = 0;
-    const beatDuration = 0.5; // 1/8 note at 120 BPM
+    let beatsInMeasure = 0;        // Beats acumulados en el compás actual
+    const beatsPerMeasure = 8;     // 4/4 con L:1/8 = 8 corcheas por compás
+    const beatDuration = 0.5;      // Duración de 1/8 en segundos (a 120 BPM)
 
-    notes.forEach((note, i) => {
+    notes.forEach((note) => {
       // Añadir silencios si hay gaps
       const gap = note.startTime - currentTime;
       if (gap > beatDuration / 2) {
-        const restBeats = Math.round(gap / beatDuration);
-        if (restBeats > 0) {
-          abcLine += `z${restBeats} `;
+        let restBeats = Math.round(gap / beatDuration);
+
+        // Insertar silencios respetando las barras de compás
+        while (restBeats > 0) {
+          const beatsUntilBar = beatsPerMeasure - beatsInMeasure;
+          const restsToAdd = Math.min(restBeats, beatsUntilBar);
+
+          if (restsToAdd > 0) {
+            abcLine += restsToAdd > 1 ? `z${restsToAdd} ` : 'z ';
+            beatsInMeasure += restsToAdd;
+            restBeats -= restsToAdd;
+          }
+
+          // Añadir barra si el compás está completo
+          if (beatsInMeasure >= beatsPerMeasure) {
+            abcLine += '| ';
+            beatsInMeasure = 0;
+          }
         }
       }
 
       // Convertir pitch MIDI a ABC
       const abcNote = this.midiToABC(note.pitch);
 
-      // Calcular duración
+      // Calcular duración en beats
       const duration = note.endTime - note.startTime;
-      const beats = Math.max(1, Math.round(duration / beatDuration));
+      let noteBeats = Math.max(1, Math.round(duration / beatDuration));
 
-      if (beats > 1) {
-        abcLine += `${abcNote}${beats}`;
-      } else {
-        abcLine += abcNote;
+      // Insertar la nota, dividiendo si cruza la barra de compás
+      while (noteBeats > 0) {
+        const beatsUntilBar = beatsPerMeasure - beatsInMeasure;
+        const beatsToWrite = Math.min(noteBeats, beatsUntilBar);
+
+        if (beatsToWrite > 1) {
+          abcLine += `${abcNote}${beatsToWrite} `;
+        } else {
+          abcLine += `${abcNote} `;
+        }
+
+        beatsInMeasure += beatsToWrite;
+        noteBeats -= beatsToWrite;
+
+        // Añadir barra si el compás está completo
+        if (beatsInMeasure >= beatsPerMeasure) {
+          abcLine += '| ';
+          beatsInMeasure = 0;
+        }
       }
-      abcLine += ' ';
 
       currentTime = note.endTime;
-
-      // Añadir barra de compás cada 4 tiempos aproximadamente
-      if ((i + 1) % 8 === 0) {
-        abcLine += '| ';
-      }
     });
+
+    // Completar el último compás con silencios si es necesario
+    if (beatsInMeasure > 0 && beatsInMeasure < beatsPerMeasure) {
+      const remainingBeats = beatsPerMeasure - beatsInMeasure;
+      abcLine += remainingBeats > 1 ? `z${remainingBeats} ` : 'z ';
+    }
 
     abcLine += '|]';
     return abcLine;

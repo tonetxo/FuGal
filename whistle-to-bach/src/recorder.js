@@ -7,6 +7,11 @@ export class AudioRecorder {
     // Inicializamos el AudioContext.
     // Nota: Los navegadores a menudo requieren una interacción del usuario antes de que esto funcione plenamente.
     this.audioContext = null; // Inicializamos en null y creamos cuando sea necesario
+
+    // Para análisis de nivel (VU meter)
+    this.analyser = null;
+    this.mediaStreamSource = null;
+    this.dataArray = null;
   }
 
   /**
@@ -47,12 +52,43 @@ export class AudioRecorder {
         }
       };
 
+      // Configurar el analizador de nivel (VU meter)
+      const context = this.getAudioContext();
+      this.analyser = context.createAnalyser();
+      this.analyser.fftSize = 256;
+      this.analyser.smoothingTimeConstant = 0.8;
+
+      this.mediaStreamSource = context.createMediaStreamSource(stream);
+      this.mediaStreamSource.connect(this.analyser);
+
+      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
       this.mediaRecorder.start();
       console.log("Grabación iniciada...");
     } catch (err) {
       console.error("Error al acceder al micrófono:", err);
       throw err;
     }
+  }
+
+  /**
+   * Obtiene el nivel de entrada actual (0-1) para el VU meter
+   * @returns {number} Nivel normalizado entre 0 y 1
+   */
+  getInputLevel() {
+    if (!this.analyser || !this.dataArray) return 0;
+
+    this.analyser.getByteFrequencyData(this.dataArray);
+
+    // Calcular el promedio de las frecuencias (RMS simplificado)
+    let sum = 0;
+    for (let i = 0; i < this.dataArray.length; i++) {
+      sum += this.dataArray[i];
+    }
+    const average = sum / this.dataArray.length;
+
+    // Normalizar a 0-1 (los valores van de 0-255)
+    return Math.min(average / 128, 1);
   }
 
   /**

@@ -101,40 +101,37 @@
     }
 
     .btn-record {
-      background: #8B4513;
+      background: #5D4037;
       color: white;
     }
 
-    /* Saddle Brown / Ocre oscuro */
     .btn-record:hover:not(:disabled) {
-      background: #A0522D;
+      background: #6D4C41;
     }
 
     .btn-record.recording {
-      background: #CD853F;
+      background: #8B4513;
       animation: pulse 1s infinite;
     }
 
     /* Peru / Bronce */
 
     .btn-process {
-      background: #B8860B;
+      background: #4E342E;
       color: white;
     }
 
-    /* Dark Goldenrod / Bronce */
     .btn-process:hover:not(:disabled) {
-      background: #DAA520;
+      background: #5D4037;
     }
 
     .btn-play {
-      background: #CD7F32;
+      background: #3E2723;
       color: white;
     }
 
-    /* Bronze */
     .btn-play:hover:not(:disabled) {
-      background: #B87333;
+      background: #4E342E;
     }
 
     #status {
@@ -182,8 +179,7 @@
 
     .file-upload-label {
       padding: 10px 20px;
-      background: #A0522D;
-      /* Sienna / Ocre */
+      background: #5D4037;
       color: white;
       border-radius: 4px;
       cursor: pointer;
@@ -192,7 +188,7 @@
     }
 
     .file-upload-label:hover {
-      background: #8B4513;
+      background: #6D4C41;
       transform: translateY(-2px);
     }
 
@@ -252,9 +248,7 @@
     }
 
     .btn-retranscribe {
-      margin-top: 15px;
-      width: 100%;
-      background: #B8860B;
+      background: #5D4037 !important;
       color: white;
       padding: 10px;
       border: none;
@@ -264,10 +258,39 @@
     }
 
     .btn-retranscribe:hover:not(:disabled) {
-      background: #DAA520;
+      background: #6D4C41 !important;
     }
 
     .btn-retranscribe:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+
+    .settings-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .settings-buttons button {
+      flex: 1;
+    }
+
+    .btn-export-midi {
+      background: #4E342E !important;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .btn-export-midi:hover:not(:disabled) {
+      background: #5D4037 !important;
+    }
+
+    .btn-export-midi:disabled {
       background: #666;
       cursor: not-allowed;
     }
@@ -293,7 +316,7 @@
     .mode-selector select {
       padding: 10px 20px;
       font-size: 16px;
-      border: 2px solid #B8860B;
+      border: 2px solid #3A6EA5;
       border-radius: 4px;
       background: var(--bg-primary);
       color: var(--text-primary);
@@ -302,13 +325,64 @@
     }
 
     .mode-selector select:hover {
-      border-color: #DAA520;
+      border-color: #4A7EB5;
     }
 
     .mode-selector select:focus {
       outline: none;
-      border-color: #CD853F;
-      box-shadow: 0 0 0 3px rgba(184, 134, 11, 0.3);
+      border-color: #5A8EC5;
+      box-shadow: 0 0 0 3px rgba(58, 110, 165, 0.3);
+    }
+
+    /* VU Meter */
+    .vu-meter {
+      width: 120px;
+      height: 20px;
+      background: #222;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      display: none;
+      /* Oculto por defecto */
+    }
+
+    .vu-meter.active {
+      display: block;
+    }
+
+    .vu-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(to right, #22c55e, #22c55e 60%, #eab308 75%, #ef4444 90%);
+      transition: width 0.05s ease-out;
+      border-radius: 2px;
+    }
+
+    .vu-segments {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+    }
+
+    .vu-segments span {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 1px;
+    }
+
+    /* Colores de zona para indicador visual */
+    .vu-segments span.yellow {
+      background: rgba(234, 179, 8, 0.2);
+    }
+
+    .vu-segments span.red {
+      background: rgba(239, 68, 68, 0.2);
     }
   </style>
 </head>
@@ -324,6 +398,15 @@
 
   <div class="controls">
     <button id="btn-record" class="btn-record">🎙️ Grabar (Silbar)</button>
+
+    <!-- VU Meter -->
+    <div class="vu-meter" id="vu-meter">
+      <div class="vu-bar" id="vu-bar"></div>
+      <div class="vu-segments">
+        <span></span><span></span><span></span><span></span><span></span>
+        <span></span><span></span><span class="yellow"></span><span class="red"></span><span class="red"></span>
+      </div>
+    </div>
 
     <label for="file-upload" class="file-upload-label">📁 Subir Audio</label>
     <input id="file-upload" type="file" accept="audio/*">
@@ -366,7 +449,10 @@
         <span id="silence-value">150</span>
       </div>
     </div>
-    <button id="btn-retranscribe" class="btn-retranscribe" disabled>🔄 Re-transcribir</button>
+    <div class="settings-buttons">
+      <button id="btn-retranscribe" class="btn-retranscribe" disabled>🔄 Re-transcribir</button>
+      <button id="btn-export-midi" class="btn-export-midi" disabled>💾 Guardar MIDI</button>
+    </div>
   </details>
 
   <div id="score-container">

@@ -11,6 +11,12 @@ const MIN_NOTE_DURATION_MS = 50;   // Ignorar notas < 50ms
 const MEDIAN_FILTER_SIZE = 5;      // Tamaño del filtro median
 const DEFAULT_BPM = 90;            // BPM inicial para cuantización
 
+// Rango de frecuencia para silbido humano (Hz)
+// Un silbido típico está entre ~500 Hz (B4) y ~4000 Hz (C8)
+// Filtramos todo lo que esté fuera de este rango
+const WHISTLE_MIN_HZ = 400;        // ~G4 - límite inferior generoso
+const WHISTLE_MAX_HZ = 4500;       // ~C#8 - límite superior generoso
+
 export class AudioTranscriber {
   constructor() {
     this.spice = null;
@@ -136,7 +142,11 @@ export class AudioTranscriber {
       const time = i * frameTime;
       const pitchHz = pitches[i];
       const confidence = confidences[i];
-      const isActive = confidence > 0.5 && pitchHz > 0;
+
+      // Filtro de rango: solo considerar frecuencias dentro del rango del silbido humano
+      // Esto elimina detecciones falsas de notas muy graves (ruido, respiración, etc.)
+      const isWithinWhistleRange = pitchHz >= WHISTLE_MIN_HZ && pitchHz <= WHISTLE_MAX_HZ;
+      const isActive = confidence > 0.5 && pitchHz > 0 && isWithinWhistleRange;
 
       if (!isActive) {
         silenceCounter++;

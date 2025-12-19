@@ -30,7 +30,13 @@ const fileInput = document.getElementById('file-upload');
 const btnProcess = document.getElementById('btn-process');
 const btnPlay = document.getElementById('btn-play');
 const btnRetranscribe = document.getElementById('btn-retranscribe');
+const btnExportMidi = document.getElementById('btn-export-midi');
 const statusEl = document.getElementById('status');
+
+// VU Meter
+const vuMeter = document.getElementById('vu-meter');
+const vuBar = document.getElementById('vu-bar');
+let vuAnimationId = null;
 
 // Validar que todos los elementos existan
 if (!btnRecord || !fileInput || !btnProcess || !btnPlay || !statusEl) {
@@ -40,6 +46,152 @@ if (!btnRecord || !fileInput || !btnProcess || !btnPlay || !statusEl) {
 
 function setStatus(msg) {
   if (statusEl) statusEl.textContent = msg;
+}
+
+/**
+ * Genera un archivo MIDI (SMF Format 0) a partir de una NoteSequence
+ * @param {Object} noteSequence - Secuencia de notas con formato Magenta
+ * @param {string} filename - Nombre del archivo a descargar
+ */
+function exportMidi(noteSequence, filename = 'transcripcion.mid') {
+  if (!noteSequence || !noteSequence.notes || noteSequence.notes.length === 0) {
+    setStatus('No hay notas para exportar.');
+    return;
+  }
+
+  const ticksPerBeat = 480;
+  const bpm = noteSequence.tempos?.[0]?.qpm || 120;
+  const microsecondsPerBeat = Math.round(60000000 / bpm);
+
+  // Funciones helper para escribir datos MIDI
+  const writeVarLen = (value) => {
+    const bytes = [];
+    bytes.push(value & 0x7F);
+    while ((value >>= 7) > 0) {
+      bytes.unshift((value & 0x7F) | 0x80);
+    }
+    return bytes;
+  };
+
+  const writeInt16 = (value) => [(value >> 8) & 0xFF, value & 0xFF];
+  const writeInt32 = (value) => [
+    (value >> 24) & 0xFF,
+    (value >> 16) & 0xFF,
+    (value >> 8) & 0xFF,
+    value & 0xFF
+  ];
+
+  // Preparar eventos MIDI ordenados por tiempo
+  const events = [];
+  const beatDuration = 60 / bpm;
+
+  noteSequence.notes.forEach(note => {
+    const startTick = Math.round((note.startTime / beatDuration) * ticksPerBeat);
+    const endTick = Math.round((note.endTime / beatDuration) * ticksPerBeat);
+    const velocity = note.velocity || 80;
+    const pitch = note.pitch;
+    const channel = 0;
+
+    events.push({ tick: startTick, type: 'noteOn', pitch, velocity, channel });
+    events.push({ tick: endTick, type: 'noteOff', pitch, velocity: 0, channel });
+  });
+
+  // Ordenar por tick
+  events.sort((a, b) => a.tick - b.tick || (a.type === 'noteOff' ? -1 : 1));
+
+  // Construir track data
+  const trackData = [];
+
+  // Tempo meta event (FF 51 03 tt tt tt)
+  trackData.push(...writeVarLen(0)); // Delta time 0
+  trackData.push(0xFF, 0x51, 0x03); // Set tempo
+  trackData.push((microsecondsPerBeat >> 16) & 0xFF);
+  trackData.push((microsecondsPerBeat >> 8) & 0xFF);
+  trackData.push(microsecondsPerBeat & 0xFF);
+
+  // Track name meta event
+  const trackName = 'Whistle Transcription';
+  trackData.push(...writeVarLen(0));
+  trackData.push(0xFF, 0x03, trackName.length);
+  for (let i = 0; i < trackName.length; i++) {
+    trackData.push(trackName.charCodeAt(i));
+  }
+
+  // Program change (acoustic piano)
+  trackData.push(...writeVarLen(0));
+  trackData.push(0xC0, 0x00);
+
+  // Note events
+  let lastTick = 0;
+  events.forEach(event => {
+    const delta = event.tick - lastTick;
+    trackData.push(...writeVarLen(delta));
+
+    if (event.type === 'noteOn') {
+      trackData.push(0x90 | event.channel, event.pitch, event.velocity);
+    } else {
+      trackData.push(0x80 | event.channel, event.pitch, 0);
+    }
+    lastTick = event.tick;
+  });
+
+  // End of track meta event
+  trackData.push(...writeVarLen(0));
+  trackData.push(0xFF, 0x2F, 0x00);
+
+  // Construir archivo MIDI completo
+  const midiData = [];
+
+  // Header chunk: MThd
+  midiData.push(0x4D, 0x54, 0x68, 0x64); // "MThd"
+  midiData.push(...writeInt32(6));        // Header length
+  midiData.push(...writeInt16(0));        // Format 0
+  midiData.push(...writeInt16(1));        // 1 track
+  midiData.push(...writeInt16(ticksPerBeat)); // Ticks per beat
+
+  // Track chunk: MTrk
+  midiData.push(0x4D, 0x54, 0x72, 0x6B); // "MTrk"
+  midiData.push(...writeInt32(trackData.length));
+  midiData.push(...trackData);
+
+  // Crear y descargar archivo
+  const blob = new Blob([new Uint8Array(midiData)], { type: 'audio/midi' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  setStatus(`MIDI exportado: ${filename}`);
+}
+
+/**
+ * Anima el VU meter durante la grabación
+ */
+function updateVuMeter() {
+  if (!vuBar) return;
+
+  const level = recorder.getInputLevel();
+  vuBar.style.width = `${level * 100}%`;
+
+  vuAnimationId = requestAnimationFrame(updateVuMeter);
+}
+
+function startVuMeter() {
+  if (vuMeter) vuMeter.classList.add('active');
+  updateVuMeter();
+}
+
+function stopVuMeter() {
+  if (vuAnimationId) {
+    cancelAnimationFrame(vuAnimationId);
+    vuAnimationId = null;
+  }
+  if (vuMeter) vuMeter.classList.remove('active');
+  if (vuBar) vuBar.style.width = '0%';
 }
 
 /**
@@ -82,6 +234,7 @@ async function transcribeAndShow() {
     btnPlay.disabled = false;
     btnProcess.disabled = false;
     if (btnRetranscribe) btnRetranscribe.disabled = false;
+    if (btnExportMidi) btnExportMidi.disabled = false;
 
   } catch (err) {
     console.error("Error al transcribir:", err);
@@ -102,6 +255,9 @@ btnRecord.addEventListener('click', async () => {
       btnRecord.classList.add('recording');
       setStatus("Grabando... Silba tu melodía claramente.");
 
+      // Iniciar VU meter
+      startVuMeter();
+
       // Limpiar estado anterior
       btnProcess.disabled = true;
       btnPlay.disabled = true;
@@ -113,6 +269,7 @@ btnRecord.addEventListener('click', async () => {
     }
   } else {
     // Parar
+    stopVuMeter();
     setStatus("Procesando audio...");
     audioBuffer = await recorder.stopRecording();
     isRecording = false;
@@ -151,6 +308,21 @@ if (btnRetranscribe) {
       return;
     }
     await transcribeAndShow();
+  });
+}
+
+// 2.6 Exportar MIDI
+if (btnExportMidi) {
+  btnExportMidi.addEventListener('click', () => {
+    // Exportar la composición Bachificada si existe, sino la melodía transcrita
+    const sequenceToExport = currentSequence || transcribedSequence;
+    if (!sequenceToExport) {
+      setStatus("No hay melodía para exportar.");
+      return;
+    }
+
+    const filename = currentSequence ? 'bach_composition.mid' : 'whistle_melody.mid';
+    exportMidi(sequenceToExport, filename);
   });
 }
 
