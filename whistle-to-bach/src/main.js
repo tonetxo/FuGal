@@ -31,6 +31,7 @@ const btnProcess = document.getElementById('btn-process');
 const btnPlay = document.getElementById('btn-play');
 const btnRetranscribe = document.getElementById('btn-retranscribe');
 const btnExportMidi = document.getElementById('btn-export-midi');
+const layoutSelector = document.getElementById('layout-mode');
 const statusEl = document.getElementById('status');
 
 // VU Meter
@@ -226,8 +227,9 @@ async function transcribeAndShow() {
     }
 
     // Mostrar la transcripción
+    const layoutMode = layoutSelector?.value || 'grand-staff';
     setStatus(`Melodía transcrita: ${transcribedSequence.notes.length} notas. Listo para Bachify.`);
-    renderer.render(transcribedSequence);
+    renderer.render(transcribedSequence, layoutMode);
 
     // Permitir reproducir la melodía original y re-transcribir
     await player.loadSequence(transcribedSequence);
@@ -360,9 +362,10 @@ btnProcess.addEventListener('click', async () => {
     const modeLabel = mode === 'fugue' ? 'Fuga' : 'Coral';
     setStatus(`¡${modeLabel} terminada! ${currentSequence.notes.length} notas en 4 voces.`);
 
-    // Cargar en el player y Renderizar
+    // Renderizar y cargar en el reproductor
+    const layoutMode = layoutSelector?.value || 'grand-staff';
+    renderer.render(currentSequence, layoutMode);
     await player.loadSequence(currentSequence);
-    renderer.render(currentSequence);
     btnPlay.disabled = false;
     btnProcess.disabled = false;
 
@@ -398,6 +401,17 @@ window.addEventListener('player-stopped', () => {
   btnPlay.textContent = "▶️ Reproducir";
   setStatus("Reproducción finalizada.");
 });
+
+// Cambio de Layout en tiempo real
+if (layoutSelector) {
+  layoutSelector.addEventListener('change', () => {
+    if (currentSequence) {
+      renderer.render(currentSequence, layoutSelector.value);
+    } else if (transcribedSequence) {
+      renderer.render(transcribedSequence, layoutSelector.value);
+    }
+  });
+}
 
 // Manejar automáticamente el resume del audio context
 document.addEventListener('click', async function initAudioContext() {

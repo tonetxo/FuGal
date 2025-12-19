@@ -7,10 +7,11 @@ export class ScoreRenderer {
   }
 
   /**
-   * Renderiza una NoteSequence de Magenta como partitura usando abcjs
-   * @param {Object} noteSequence - NoteSequence de Magenta
+   * Renderiza una NoteSequence como partitura ABC
+   * @param {Object} noteSequence - Secuencia de notas
+   * @param {string} layoutMode - Modo de layout ('grand-staff' o 'open-score')
    */
-  render(noteSequence) {
+  render(noteSequence, layoutMode = 'grand-staff') {
     if (!noteSequence || !noteSequence.notes || noteSequence.notes.length === 0) {
       console.warn("No hay notas para renderizar");
       const div = document.getElementById(this.elementId);
@@ -27,8 +28,8 @@ export class ScoreRenderer {
     }
 
     try {
-      // Convertir NoteSequence a ABC notation
-      const abcNotation = this.noteSequenceToABC(noteSequence);
+      // Convertir NoteSequence a ABC notation con el layout seleccionado
+      const abcNotation = this.noteSequenceToABC(noteSequence, layoutMode);
       console.log("ABC Notation generada:", abcNotation);
 
       // Renderizar con abcjs
@@ -36,38 +37,43 @@ export class ScoreRenderer {
       abcjs.renderAbc(div, abcNotation, {
         responsive: 'resize',
         add_classes: true,
-        staffwidth: 850,
-        scale: 1.0,
-        paddingtop: 10,
-        paddingbottom: 10,
-        wrap: {
+        scale: 1.4,          // Aumentar tamaño para mejor visibilidad
+        paddingtop: 20,
+        paddingbottom: 20,
+        paddingright: 20,
+        paddingleft: 20,
+        staffwidth: 800,     // Ancho de referencia
+        wrap: {              // Forzar el salto de línea para que no se corte
           minSpacing: 1.8,
           maxSpacing: 2.8,
           preferredMeasuresPerLine: 4
         }
       });
-
-    } catch (error) {
-      console.error("Error al renderizar la partitura:", error);
-      div.innerHTML = '<p style="color: #f00; text-align: center;">Error al renderizar la partitura</p>';
+    } catch (err) {
+      console.error("Error al renderizar partitura:", err);
     }
   }
 
   /**
    * Convierte una NoteSequence de Magenta a notación ABC
-   * @param {Object} noteSequence - NoteSequence de Magenta
+   * @param {Object} noteSequence - Secuencia de notas
+   * @param {string} layoutMode - Modo de layout: 'grand-staff' o 'open-score'
    * @returns {string} Notación ABC
    */
-  noteSequenceToABC(noteSequence) {
-    // Separar notas por voz/instrumento
+  noteSequenceToABC(noteSequence, layoutMode = 'grand-staff') {
+    if (!noteSequence || !noteSequence.notes || noteSequence.notes.length === 0) {
+      return '';
+    }
+
+    // Organizar notas por instrumento (voz)
     const voices = {};
     noteSequence.notes.forEach(note => {
-      const voice = note.instrument || 0;
-      if (!voices[voice]) voices[voice] = [];
-      voices[voice].push(note);
+      const inst = note.instrument || 0;
+      if (!voices[inst]) voices[inst] = [];
+      voices[inst].push(note);
     });
 
-    // Ordenar notas por tiempo
+    // Asegurar que las notas están ordenadas
     Object.values(voices).forEach(notes => {
       notes.sort((a, b) => a.startTime - b.startTime);
     });
@@ -88,11 +94,18 @@ export class ScoreRenderer {
     const syncedTotalTime = totalMeasures * beatsPerMeasure * beatDuration;
 
     // Generar header ABC
+    // %%score { (1 2) | (3 4) } agrupa voces 1/2 y 3/4 en dos sistemas con barras unidas
+    // %%score { 1 | 2 | 3 | 4 } muestra 4 sistemas independientes pero con barras unidas
+    const scoreDirective = layoutMode === 'open-score'
+      ? '%%score { 1 | 2 | 3 | 4 }'
+      : '%%score { (1 2) | (3 4) }';
+
     let abc = `X:1
 T:Whistle to Bach
 M:4/4
 L:1/8
 Q:1/4=${qpm}
+${scoreDirective}
 K:C
 `;
 
